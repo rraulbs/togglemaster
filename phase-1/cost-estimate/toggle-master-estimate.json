@@ -1,0 +1,89 @@
+{
+	"Name": "ToggleMaster Fase 1",
+	"Total Cost": {
+		"monthly": "27.86",
+		"upfront": "0.00",
+		"12 months": "334.32"
+	},
+	"Metadata": {
+		"Currency": "USD",
+		"Locale": "en_US",
+		"Created On": "10/18/2026",
+		"Legal Disclaimer": "AWS Pricing Calculator provides only an estimate of your AWS fees and doesn't include any taxes that might apply. Your actual fees depend on a variety of factors, including your actual usage of AWS services.",
+		"Share Url": "https://calculator.aws/#/estimate?id=caba77aabf580971e7d7218c79ccdc2105c2b1b7"
+	},
+	"Groups": {
+		"Services": [
+			{
+				"Service Name": "Amazon EC2 ",
+				"Region": "US East (N. Virginia)",
+				"Status": "",
+				"Service Cost": {
+					"monthly": "8.32",
+					"upfront": "0.00",
+					"12 months": "99.86"
+				},
+				"Properties": {
+					"Tenancy": "Shared Instances",
+					"Operating system": "Linux",
+					"Workload": "Consistent, Number of instances: 1",
+					"Advance EC2 instance": "t3.micro",
+					"Pricing strategy": "On-Demand Utilization: 100 %Utilized/Month",
+					"Enable monitoring": "disabled",
+					"EBS Storage amount": "8 GB",
+					"DT Inbound: Not selected": "0 TB per month",
+					"DT Outbound: Internet": "1 GB per month",
+					"DT Intra-Region:": "0 TB per month"
+				}
+			},
+			{
+				"Service Name": "Amazon RDS for PostgreSQL",
+				"Region": "US East (N. Virginia)",
+				"Status": "",
+				"Service Cost": {
+					"monthly": "15.44",
+					"upfront": "0.00",
+					"12 months": "185.28"
+				},
+				"Properties": {
+					"Storage amount": "20 GB",
+					"Storage volume": "General Purpose SSD (gp3)",
+					"Nodes": "1",
+					"Instance Type": "db.t3.micro",
+					"Utilization (On-Demand only)": "100 %Utilized/Month",
+					"Deployment Option": "Single-AZ",
+					"Pricing Model": "OnDemand"
+				}
+			},
+			{
+				"Service Name": "Public IPv4 Address",
+				"Region": "US East (N. Virginia)",
+				"Status": "",
+				"Service Cost": {
+					"monthly": "3.65",
+					"upfront": "0.00",
+					"12 months": "43.80"
+				},
+				"Properties": {
+					"Number of In-use public IPv4 addresses": "1",
+					"Number of Idle public IPv4 addresses": "0"
+				}
+			},
+			{
+				"Service Name": "AWS Secrets Manager",
+				"Region": "US East (N. Virginia)",
+				"Status": "",
+				"Service Cost": {
+					"monthly": "0.45",
+					"upfront": "0.00",
+					"12 months": "5.40"
+				},
+				"Properties": {
+					"Number of secrets": "1",
+					"Average duration of each secret": "30 days",
+					"Number of API calls": "10000 per month"
+				}
+			}
+		]
+	}
+}

@@ -1,0 +1,17 @@
+﻿Estimate summary
+Upfront cost,Monthly cost,Total 12 months cost,Currency
+0,27.86,334.32,USD
+,,* Includes upfront cost
+
+
+Detailed Estimate
+Group hierarchy,Region,Description,Service,Upfront,Monthly,First 12 months total,Currency,Status,Configuration summary
+ToggleMaster Fase 1,US East (N. Virginia),,Amazon EC2 ,0,8.322,99.86,USD,,"Tenancy (Shared Instances), Operating system (Linux), Workload (Consistent, Number of instances: 1), Advance EC2 instance (t3.micro), Pricing strategy (On-Demand Utilization: 100 %Utilized/Month), Enable monitoring (disabled), EBS Storage amount (8 GB), DT Inbound: Not selected (0 TB per month), DT Outbound: Internet (1 GB per month), DT Intra-Region: (0 TB per month)"
+ToggleMaster Fase 1,US East (N. Virginia),,Amazon RDS for PostgreSQL,0,15.440000000000001,185.28,USD,,"Storage amount (20 GB), Storage volume (General Purpose SSD (gp3)), Nodes (1), Instance Type (db.t3.micro), Utilization (On-Demand only) (100 %Utilized/Month), Deployment Option (Single-AZ), Pricing Model (OnDemand)"
+ToggleMaster Fase 1,US East (N. Virginia),,Public IPv4 Address,0,3.65,43.80,USD,,"Number of In-use public IPv4 addresses (1), Number of Idle public IPv4 addresses (0)"
+ToggleMaster Fase 1,US East (N. Virginia),,AWS Secrets Manager,0,0.45,5.40,USD,,"Number of secrets (1), Average duration of each secret (30 days), Number of API calls (10000 per month)"
+
+
+
+Acknowledgement
+"* AWS Pricing Calculator provides only an estimate of your AWS fees and doesn't include any taxes that might apply. Your actual fees depend on a variety of factors, including your actual usage of AWS services."
