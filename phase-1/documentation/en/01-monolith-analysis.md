@@ -10,11 +10,11 @@ This analysis is based on the application source code (`app.py`, `Dockerfile`, `
 
 | Layer | Technology | Role |
 |---|---|---|
-| Language | Python 3.9 (`python:3.9-slim` image) | Runtime |
+| Language | Python 3.9 (`python:3.9-slim` image; 3.9.25 on EC2) | Runtime |
 | Web framework | Flask 2.2.2 | HTTP routes and JSON |
 | Application server | Gunicorn 20.1.0 | Production WSGI server (port 5000) |
 | Database driver | psycopg2-binary 2.9.5 | PostgreSQL connection |
-| Database | PostgreSQL 13 (container in compose; RDS on AWS) | Persistence |
+| Database | PostgreSQL 16 (container in compose; RDS on AWS) | Persistence |
 | Packaging | Docker + Docker Compose | Local execution |
 
 ### 1.2 Code structure
@@ -65,7 +65,7 @@ There is a single table, `flags`:
 3. **There is no connection pool.** Each request opens and closes a connection. It works for an MVP, but it is costly under load.
 4. **500 errors return `str(e)` to the client** (the `details` field), which may leak internal details.
 5. **There is no authentication.** Any client that can reach the API can create or modify flags.
-6. **The README messages are in English** (`created successfully`), but the code responds in Portuguese (`criada com sucesso`). This is only a documentation mismatch.
+6. **The README messages are in English** (`created successfully`), but the code responds in Portuguese (`criada com sucesso`), as seen in the API tests on AWS. This is only a documentation mismatch.
 
 ---
 
@@ -83,10 +83,10 @@ A monolith is an application in which **all the logic lives in a single codebase
 
 ### 2.2 The role of the database
 
-The database is a component separate from the application: in Docker Compose it is the `db` container, and on AWS it will be RDS. This is standard practice and **does not make the application any less of a monolith**, because the term refers to the application, not to the infrastructure around it. The key point is that all the application logic lives in a single service:
-
+The database is a component separate from the application: in Docker Compose it is the `db` container, and on AWS it is RDS. This is standard practice and **does not make the application any less of a monolith**, because the term refers to the application, not to the infrastructure around it. The key point is that all the application logic lives in a single service:
+ 
 > The application is a monolith because all of its logic (API, validation, business rules and data access) lives in a single codebase and is deployed as a single unit. The database is an external component, but the application as a whole cannot be evolved, scaled or deployed in parts.
-
+ 
 In a microservices architecture, ToggleMaster could be split into, for example, a flag management service, an authentication service and a flag evaluation service, each with its own deployment and, often, its own database.
 
 ---
@@ -99,9 +99,9 @@ In a microservices architecture, ToggleMaster could be split into, for example, 
 |---|---|
 | **Simplicity** | A single file and a flow that is easy to understand and debug |
 | **Development speed** | A CRUD API comes up quickly, with no contracts between services |
-| **Simple deployment** | One artifact and one process; on EC2, just clone, install and run |
+| **Simple deployment** | One artifact and one process; on EC2, just copy the code, install the dependencies and run |
 | **Less coordination** | A small team works on a single codebase |
-| **Lower initial cost** | A small EC2 instance and a small RDS instance are enough |
+| **Lower initial cost** | A small EC2 instance and a small RDS instance are enough (about US$28 per month in the Phase 1 estimate) |
 | **Data consistency** | A single database, with no distributed transactions |
 | **Less operational overhead** | No service discovery, messaging or distributed tracing |
 | **Fast idea validation** | This is the point of an MVP: get it live and collect feedback |
@@ -113,7 +113,7 @@ In a microservices architecture, ToggleMaster could be split into, for example, 
 | **Scaling only as a whole** | If flag reads are far more frequent than writes, there is no way to scale reads alone |
 | **Coupling** | Business logic, HTTP and SQL mixed together make testing and changes harder |
 | **Risky deployments** | A small change requires redeploying everything |
-| **Single point of failure** | One EC2 instance and one process: if it goes down, everything goes down |
+| **Single point of failure** | One EC2 instance, one process (Gunicorn in the foreground) and one Single-AZ RDS instance: if any of them goes down, the API is unavailable |
 | **Hard to evolve into microservices** | Before splitting, layers and responsibilities must be separated |
 | **Single stack** | The whole system is tied to Python/Flask |
 | **Growing complexity** | With more features, `app.py` tends to become hard to maintain |

@@ -2,7 +2,9 @@
 
 Esta análise avalia a aplicação monolítica ToggleMaster (`app.py`, `Dockerfile`, `docker-compose.yaml`, `entrypoint.sh` e `requirements.txt`) frente aos 12 fatores da metodologia [12-Factor App](https://12factor.net/pt_br/). Para cada fator, apresentamos a evidência no código, o status e a melhoria sugerida para um ambiente de produção.
 
-Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descritas aqui são recomendações para um ambiente de produção mais robusto e não fazem parte do escopo desta fase.
+Na Fase 1, a aplicação é implantada na AWS **como está**: o código (`app.py`) não foi alterado, e a única mudança no diretório `toggle-master-monolith/` foi a imagem do banco local no `docker-compose.yaml` (`postgres:13` para `postgres:16`), para manter a paridade com o RDS. As melhorias descritas aqui são recomendações para um ambiente de produção mais robusto e não fazem parte do escopo desta fase.
+
+A análise foi atualizada após a implantação, de modo que as evidências refletem o que foi efetivamente provisionado (detalhes em `03-arquitetura-aws.md`).
 
 **Legenda:** ✅ atende | ⚠️ atende parcialmente | ❌ não atende
 
@@ -14,14 +16,14 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 |---|---|---|---|
 | I | Codebase | ✅ | Uma base de código versionada em Git, com deploys local e AWS |
 | II | Dependências | ✅ | Declaradas e fixadas em `requirements.txt`; há uma dependência de sistema implícita |
-| III | Configuração | ⚠️ | Usa variáveis de ambiente, mas há inconsistências e segredos em texto puro |
+| III | Configuração | ⚠️ | Variáveis de ambiente e, na AWS, segredos no Secrets Manager; restam inconsistências (`DB_PORT`, SSL, validação) |
 | IV | Serviços de apoio | ✅ | O banco é um recurso anexado, trocável apenas por variáveis de ambiente |
 | V | Build, release, run | ❌ | Deploy manual na EC2; sem artefato versionado nem pipeline |
 | VI | Processos | ✅ | Aplicação stateless; todo o estado fica no PostgreSQL |
 | VII | Vínculo de porta | ✅ | Autocontida: o Gunicorn expõe a porta 5000 |
 | VIII | Concorrência | ⚠️ | Escala por processos, mas sem pool de conexões e com worker único por padrão |
 | IX | Descartabilidade | ⚠️ | Inicia rápido e usa `exec`, mas sem gerenciador de processos na EC2 |
-| X | Paridade dev/prod | ⚠️ | Mesmo motor de banco, mas local roda em Docker e a EC2 em venv |
+| X | Paridade dev/prod | ⚠️ | Mesmo motor, versão do banco e Python, mas local roda em Docker e a EC2 em venv |
 | XI | Logs | ⚠️ | Sai em stdout/stderr, mas exceções não são registradas |
 | XII | Processos administrativos | ✅ | `flask init-db` roda como comando avulso, com o mesmo código |
 
@@ -47,10 +49,10 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 
 **Evidência:**
 - `requirements.txt` com versões fixas: Flask 2.2.2, Werkzeug 2.3.8, psycopg2-binary 2.9.5 e gunicorn 20.1.0.
-- Isolamento por container (Dockerfile) ou por ambiente virtual (`venv`) na EC2.
+- Isolamento por container (Dockerfile) ou por ambiente virtual (`venv`) na EC2. Na implantação, o `pip install -r requirements.txt` no `venv` com Python 3.9.25 (Amazon Linux 2023) concluiu sem erros.
 
 **Ressalvas:**
-1. O `entrypoint.sh` depende do `pg_isready`, parte do pacote `postgresql-client`. No Docker ele é instalado pelo Dockerfile. Na EC2, só é necessário se o `entrypoint.sh` for usado; se o Gunicorn for iniciado diretamente, a dependência não se aplica. Em ambos os casos, **ela não está declarada fora do Dockerfile**.
+1. O `entrypoint.sh` depende do `pg_isready`, parte do pacote `postgresql-client`. No Docker ele é instalado pelo Dockerfile. Na EC2, só é necessário se o `entrypoint.sh` for usado; se o Gunicorn for iniciado diretamente (como foi feito), a dependência não se aplica. Em ambos os casos, **ela não está declarada fora do Dockerfile**.
 2. `app.py` importa `click` diretamente, mas ele não está no `requirements.txt` (chega só como dependência transitiva do Flask). O import também não é usado.
 3. Não há *lockfile* com dependências transitivas, e as versões fixadas são antigas (Flask 2.2.2, Python 3.9).
 
@@ -68,12 +70,13 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 **Evidência (pontos positivos):**
 - `app.py` lê `DB_HOST`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` com `os.getenv`. Nenhuma credencial está no código.
 - A mesma imagem funciona em qualquer ambiente, mudando apenas as variáveis.
+- Na AWS, `DB_USER` e `DB_PASSWORD` vêm do segredo gerenciado pelo RDS no **AWS Secrets Manager**, lido pela EC2 por meio de uma IAM Role (`LabInstanceProfile`) e exportado como variáveis de ambiente antes de iniciar o Gunicorn. A senha não é digitada, não fica no histórico do shell nem em arquivo, e o `app.py` não precisou ser alterado.
 
 **Problemas encontrados:**
 1. **Inconsistência com `DB_PORT`:** o `entrypoint.sh` exige essa variável e a usa no `pg_isready`, mas o `app.py` não a lê. O `psycopg2` acaba usando a porta padrão 5432. Funciona com RDS PostgreSQL, mas a configuração não é fiel ao que se declara.
 2. **Validação incompleta:** o `entrypoint.sh` valida `DB_HOST`, `DB_PORT` e `DB_NAME`, mas não `DB_USER` e `DB_PASSWORD`. Além disso, com `set -u` ativo, uma variável ausente derruba o script com erro genérico antes de a mensagem amigável ser exibida.
-3. **Credenciais em texto puro:** o `docker-compose.yaml` versiona `user`/`password`. É aceitável em desenvolvimento local, mas não pode ser copiado para produção. Na EC2, `export` no terminal deixa o segredo no ambiente do processo e no histórico do shell.
-4. **Sem SSL para o banco:** a conexão não define `sslmode`, e o RDS suporta conexões criptografadas.
+3. **Gestão manual das variáveis:** o `docker-compose.yaml` versiona `user`/`password`, o que é aceitável em desenvolvimento local, mas não pode ser copiado para produção. Na EC2, a leitura do segredo é feita manualmente a cada sessão: as variáveis só existem no terminal em que foram exportadas (é preciso repetir o procedimento e reiniciar o Gunicorn ao reconectar), e a aplicação lê a senha uma única vez, ao iniciar. Como o segredo do RDS é rotacionado automaticamente (por padrão, a cada 7 dias), uma rotação exige reiniciar a aplicação.
+4. **SSL sem validação de certificado:** a conexão não define `sslmode`, e o padrão do `psycopg2` (`prefer`) negocia SSL quando o servidor oferece. O RDS PostgreSQL 15 ou superior exige SSL por padrão, então o tráfego é criptografado, mas o certificado do servidor não é verificado.
 5. **Porta da aplicação fixa:** `5000` está escrita no Dockerfile, no entrypoint e no `app.py`.
 
 **Melhorias:**
@@ -86,8 +89,8 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
   : "${DB_USER:?DB_USER não definida}"
   : "${DB_PASSWORD:?DB_PASSWORD não definida}"
   ```
-- Em produção, mover segredos para **AWS Secrets Manager** ou **SSM Parameter Store**, lidos via IAM Role, e não manter senhas em arquivos versionados.
-- Usar `sslmode=require` na conexão com o RDS.
+- Automatizar a leitura do segredo (por exemplo, no serviço `systemd` ou pela própria aplicação) e tratar a rotação sem reinício manual. O **Secrets Manager** já é usado na Fase 1; a evolução é deixar de depender de um passo manual.
+- Usar `sslmode=verify-full` na conexão com o RDS, com o certificado raiz da AWS.
 - Tornar a porta configurável (`PORT`).
 
 ---
@@ -96,9 +99,9 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 
 **Princípio:** tratar serviços de apoio (bancos, filas, caches) como recursos anexados.
 
-**Evidência:** o banco é acessado exclusivamente por variáveis de ambiente. No Docker Compose, `DB_HOST=db` aponta para o container PostgreSQL. Na AWS, bastará ajustar as variáveis de conexão (`DB_HOST` com o endpoint do RDS, além de `DB_NAME`, `DB_USER` e `DB_PASSWORD`, conforme o banco criado), **sem alterar uma linha de código**. É o melhor exemplo de aderência do projeto.
+**Evidência:** o banco é acessado exclusivamente por variáveis de ambiente. No Docker Compose, `DB_HOST=db` aponta para o container PostgreSQL. Na AWS, bastou ajustar as variáveis de conexão (`DB_HOST` com o endpoint do RDS, além de `DB_NAME`, `DB_USER` e `DB_PASSWORD`, conforme o banco criado), **sem alterar uma linha de código**, o que foi confirmado na implantação. É o melhor exemplo de aderência do projeto.
 
-**Melhoria:** nenhuma obrigatória. Como boa prática, manter a mesma versão principal do PostgreSQL no RDS e no compose (13).
+**Melhoria:** nenhuma obrigatória. Como boa prática, a mesma versão principal do PostgreSQL foi mantida no RDS e no compose (16). A versão 13, usada originalmente no compose, saiu do suporte padrão do RDS em 28/02/2026.
 
 ---
 
@@ -107,16 +110,16 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 **Princípio:** separar rigorosamente os estágios de construção, liberação e execução.
 
 **Evidência:**
-- **Build:** existe um Dockerfile, mas na AWS o plano é fazer `git clone` e `pip install` diretamente na EC2, misturando build e run em uma operação manual.
+- **Build:** existe um Dockerfile, mas na AWS o código foi copiado para a EC2 (`scp`) e as dependências instaladas com `pip install` diretamente na instância, misturando build e run em uma operação manual.
 - **Release:** não há versionamento de artefato (tags, imagem em registry). Não é possível apontar "a versão X está no ar" nem fazer rollback preciso.
-- **Run:** a inicialização do banco (`flask init-db`) acontece na partida do container, o que mistura uma etapa de release (migração de schema) com a execução.
+- **Run:** a inicialização do banco (`flask init-db`) acontece na partida do container, o que mistura uma etapa de release (migração de schema) com a execução. Na EC2, ela foi executada manualmente, uma vez.
 - Não há pipeline de CI/CD.
 
 **Melhorias:**
 - Versionar com tags Git e gerar imagens Docker com tag de versão, publicadas em um registry (Amazon ECR).
 - Automatizar build e deploy com pipeline de CI/CD.
 - Separar a migração de schema da partida da aplicação (etapa de release).
-- Para a Fase 1, documentar o procedimento manual e registrar o commit implantado.
+- Para a Fase 1, documentar o procedimento manual (feito em `03-arquitetura-aws.md`) e registrar o commit implantado.
 
 ---
 
@@ -134,7 +137,7 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 
 **Princípio:** exportar serviços via vínculo de porta, sem depender de um servidor web externo.
 
-**Evidência:** a aplicação é autocontida. O Gunicorn faz o *bind* em `0.0.0.0:5000` e atende HTTP diretamente, sem Apache ou Nginx obrigatórios.
+**Evidência:** a aplicação é autocontida. O Gunicorn faz o *bind* em `0.0.0.0:5000` e atende HTTP diretamente, sem Apache ou Nginx obrigatórios. Na AWS, a API respondeu em `http://<ip-publico>:5000` com apenas a porta 5000 liberada no Security Group.
 
 **Melhoria:** ler a porta de uma variável (`--bind 0.0.0.0:${PORT:-5000}`). Em produção, é comum colocar um proxy reverso ou Load Balancer na frente para TLS e portas 80/443.
 
@@ -167,7 +170,7 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 
 **Problemas:**
 1. O loop de espera do banco (`until pg_isready`) **não tem limite de tentativas**: se o banco nunca subir, o container fica preso para sempre.
-2. Na EC2, o Gunicorn roda em primeiro plano; se a sessão SSH fecha, a aplicação cai, e não há reinício automático em caso de falha.
+2. Na EC2, o Gunicorn roda em primeiro plano; se a sessão SSH fecha, a aplicação cai, e não há reinício automático em caso de falha. Na prática, isso exige reiniciar a aplicação (e reexportar as variáveis) a cada nova sessão.
 3. O `CMD` do Dockerfile é ignorado, pois o `entrypoint.sh` fixa o comando do Gunicorn.
 
 **Melhorias:**
@@ -181,16 +184,18 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 
 **Princípio:** manter desenvolvimento, homologação e produção o mais semelhantes possível.
 
-**Evidência (positivo):** o ambiente local usa PostgreSQL 13, o mesmo motor que será usado no RDS (PostgreSQL), evitando a armadilha de testar em um banco e produzir em outro.
+**Evidência (positivo):**
+- O ambiente local usa PostgreSQL 16, o mesmo motor e a mesma versão principal do RDS (16.15), evitando a armadilha de testar em um banco e produzir em outro.
+- O Python também coincide: 3.9 no container (`python:3.9-slim`) e 3.9.25 na EC2 (Amazon Linux 2023).
 
 **Diferenças encontradas:**
-1. Localmente a aplicação roda em **Docker**; na EC2, o plano é rodar direto com **venv**. Sistema operacional, pacotes e forma de execução diferem.
+1. Localmente a aplicação roda em **Docker** (Debian); na EC2, roda direto com **venv** (Amazon Linux 2023). Sistema operacional, pacotes de sistema e forma de execução diferem.
 2. O compose monta `.:/app` como volume (conveniência de desenvolvimento) e usa credenciais fixas.
 3. O banco local é um container; o de produção é um serviço gerenciado, com outros parâmetros e SSL.
 
 **Melhorias:**
 - Rodar o mesmo container Docker na EC2, o que aproxima os dois ambientes.
-- Escolher no RDS a mesma versão principal do PostgreSQL do compose.
+- Manter a mesma versão principal do PostgreSQL no compose e no RDS ao atualizar qualquer um deles.
 - Evitar volume de código fora do ambiente de desenvolvimento.
 
 ---
@@ -224,7 +229,7 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 **Evidência:** a criação da tabela é um comando da própria aplicação (`@app.cli.command("init-db")`), executado com `flask init-db`. Usa o mesmo código, as mesmas variáveis de ambiente e pode ser rodado manualmente a qualquer momento.
 
 **Observações:**
-- Por ser um comando avulso, ele pode ser executado manualmente a qualquer momento. No deploy direto na EC2 (sem o `entrypoint.sh`), basta rodar `flask init-db` uma vez para criar a tabela. Esse é exatamente o comportamento esperado pelo fator.
+- Por ser um comando avulso, ele pode ser executado manualmente a qualquer momento. No deploy direto na EC2 (sem o `entrypoint.sh`), basta rodar `flask init-db` uma vez para criar a tabela, que foi exatamente o procedimento usado na implantação e o comportamento esperado pelo fator.
 - Ressalva de qualidade: o `entrypoint.sh` chama `flask init-db || true`, e a função `init_db()` captura as exceções e só imprime. Assim, **falhas na criação da tabela podem passar despercebidas** e a aplicação sobe mesmo sem o schema. Isso é uma questão de tratamento de erros (veja também o fator XI), e não do princípio do fator.
 - Para evolução do schema, será necessária uma ferramenta de migrações (Alembic, Flyway), pois `CREATE TABLE IF NOT EXISTS` não altera tabelas existentes.
 
@@ -239,8 +244,8 @@ Na Fase 1, a aplicação é implantada na AWS **como está**. As melhorias descr
 As melhorias abaixo são sugestões para evolução da aplicação. **Não fazem parte do escopo da Fase 1**, que mantém a aplicação como está.
 
 1. **Logs (XI):** registrar exceções com `logging`, habilitar o log de acesso do Gunicorn e não devolver `str(e)` ao cliente.
-2. **Configuração (III):** ler `DB_PORT` no código, validar todas as variáveis obrigatórias e usar `sslmode=require` na conexão com o RDS.
-3. **Segredos (III):** substituir senhas em variáveis de ambiente por AWS Secrets Manager ou SSM Parameter Store.
+2. **Configuração (III):** ler `DB_PORT` no código, validar todas as variáveis obrigatórias e usar `sslmode=verify-full` na conexão com o RDS.
+3. **Segredos (III):** o Secrets Manager já é usado na Fase 1, com leitura manual na EC2. A evolução é automatizar a leitura (por exemplo, no serviço `systemd`) e tratar a rotação do segredo sem reinício manual.
 4. **Execução (IX):** rodar a aplicação como serviço `systemd` ou em container com reinício automático, e fazer o `/health` verificar o banco.
 5. **Entrega (V, X):** versionar imagens Docker em um registry e automatizar o deploy com CI/CD, rodando o mesmo container em desenvolvimento e produção.
 6. **Escalabilidade (VIII):** definir `--workers` e adotar pool de conexões ou RDS Proxy.
@@ -250,6 +255,6 @@ As melhorias abaixo são sugestões para evolução da aplicação. **Não fazem
 
 ## 4. Conclusão
 
-O ToggleMaster já nasce com uma base sólida em vários fatores: **código único em Git, dependências declaradas, banco tratado como recurso anexado, processos sem estado, vínculo de porta e tarefa administrativa como comando avulso**. Isso explica por que a aplicação pode ser movida do ambiente local para a AWS trocando apenas variáveis de ambiente.
+O ToggleMaster já nasce com uma base sólida em vários fatores: **código único em Git, dependências declaradas, banco tratado como recurso anexado, processos sem estado, vínculo de porta e tarefa administrativa como comando avulso**. Isso explica por que a aplicação foi movida do ambiente local para a AWS trocando apenas variáveis de ambiente, o que a implantação confirmou.
 
-As lacunas concentram-se na **operação em produção**: o ciclo de build/release/run é manual (fator V), os logs não registram falhas (XI), a gestão de segredos é rudimentar (III), e há pouca resiliência de processos e conexões (VIII e IX). São problemas esperados em um MVP, e a maioria tem correção simples e de baixo custo. Para esta fase, a aplicação é implantada como está; as recomendações da seção 3, como pipeline de entrega, gestão de segredos e observabilidade, alinham-se à evolução prevista do projeto para um sistema distribuído e automatizado nas próximas fases.
+As lacunas concentram-se na **operação em produção**: o ciclo de build/release/run é manual (fator V), os logs não registram falhas (XI), a gestão de segredos melhorou com o Secrets Manager, mas ainda depende de um passo manual a cada sessão e de reinício após a rotação (III), e há pouca resiliência de processos e conexões (VIII e IX). São problemas esperados em um MVP, e a maioria tem correção simples e de baixo custo. Para esta fase, a aplicação é implantada como está; as recomendações da seção 3, como pipeline de entrega, automação da leitura de segredos e observabilidade, alinham-se à evolução prevista do projeto para um sistema distribuído e automatizado nas próximas fases.

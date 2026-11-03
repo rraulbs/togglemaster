@@ -10,11 +10,11 @@ Esta análise se baseia no código-fonte da aplicação (`app.py`, `Dockerfile`,
 
 | Camada | Tecnologia | Papel |
 |---|---|---|
-| Linguagem | Python 3.9 (imagem `python:3.9-slim`) | Runtime |
+| Linguagem | Python 3.9 (imagem `python:3.9-slim`; 3.9.25 na EC2) | Runtime |
 | Framework web | Flask 2.2.2 | Rotas HTTP e JSON |
 | Servidor de aplicação | Gunicorn 20.1.0 | Servidor WSGI de produção (porta 5000) |
 | Driver de banco | psycopg2-binary 2.9.5 | Conexão com PostgreSQL |
-| Banco de dados | PostgreSQL 13 (container no compose; RDS na AWS) | Persistência |
+| Banco de dados | PostgreSQL 16 (container no compose; RDS na AWS) | Persistência |
 | Empacotamento | Docker + Docker Compose | Execução local |
 
 ### 1.2 Estrutura do código
@@ -65,7 +65,7 @@ Existe uma única tabela, `flags`:
 3. **Não há pool de conexões.** Cada requisição abre e fecha uma conexão. Funciona no MVP, mas é custoso sob carga.
 4. **Os erros 500 devolvem `str(e)` ao cliente** (campo `details`), o que pode vazar detalhes internos.
 5. **Não há autenticação.** Qualquer cliente que alcance a API pode criar ou alterar flags.
-6. **As mensagens do README estão em inglês** (`created successfully`), mas o código responde em português (`criada com sucesso`). É apenas uma divergência de documentação.
+6. **As mensagens do README estão em inglês** (`created successfully`), mas o código responde em português (`criada com sucesso`), como se viu nos testes da API na AWS. É apenas uma divergência de documentação.
 
 ---
 
@@ -83,10 +83,10 @@ Um monólito é uma aplicação em que **toda a lógica vive em uma única base 
 
 ### 2.2 O papel do banco de dados
 
-O banco de dados é um componente separado da aplicação: no Docker Compose é o container `db`, e na AWS será o RDS. Isso é a prática normal e **não descaracteriza o monólito**, porque o termo se refere à aplicação, não à infraestrutura ao redor. O ponto central é que toda a lógica da aplicação está em um único serviço:
-
+O banco de dados é um componente separado da aplicação: no Docker Compose é o container `db`, e na AWS é o RDS. Isso é a prática normal e **não descaracteriza o monólito**, porque o termo se refere à aplicação, não à infraestrutura ao redor. O ponto central é que toda a lógica da aplicação está em um único serviço:
+ 
 > A aplicação é um monólito porque toda a lógica (API, validação, regras de negócio e acesso a dados) está em uma única base de código e é implantada como uma única unidade. O banco de dados é um componente externo, mas a aplicação como um todo não pode ser evoluída, escalada ou implantada em partes.
-
+ 
 Em uma arquitetura de microsserviços, o ToggleMaster poderia ser dividido, por exemplo, em um serviço de gestão de flags, um de autenticação e um de avaliação de flags, cada um com seu próprio deploy e, muitas vezes, seu próprio banco.
 
 ---
@@ -99,9 +99,9 @@ Em uma arquitetura de microsserviços, o ToggleMaster poderia ser dividido, por 
 |---|---|
 | **Simplicidade** | Um único arquivo e um fluxo fácil de entender e depurar |
 | **Velocidade de desenvolvimento** | Uma API CRUD sobe rápido, sem contratos entre serviços |
-| **Deploy simples** | Um artefato e um processo; na EC2, basta clonar, instalar e rodar |
+| **Deploy simples** | Um artefato e um processo; na EC2, basta copiar o código, instalar as dependências e rodar |
 | **Menos coordenação** | Um time pequeno trabalha em uma só base de código |
-| **Menor custo inicial** | Uma EC2 pequena e um RDS pequeno bastam |
+| **Menor custo inicial** | Uma EC2 pequena e um RDS pequeno bastam (cerca de US$ 28 por mês na estimativa da Fase 1) |
 | **Consistência de dados** | Um único banco, sem transações distribuídas |
 | **Menos overhead operacional** | Não há service discovery, mensageria nem tracing distribuído |
 | **Validação rápida da ideia** | É o objetivo do MVP: colocar no ar e receber feedback |
@@ -113,7 +113,7 @@ Em uma arquitetura de microsserviços, o ToggleMaster poderia ser dividido, por 
 | **Escalabilidade apenas em bloco** | Se a leitura de flags for muito mais frequente que a escrita, não há como escalar só a leitura |
 | **Acoplamento** | Regra de negócio, HTTP e SQL misturados dificultam testes e mudanças |
 | **Deploy de risco** | Uma pequena alteração exige reimplantar tudo |
-| **Ponto único de falha** | Uma EC2 e um processo: se cair, tudo cai |
+| **Ponto único de falha** | Uma EC2, um processo (Gunicorn em primeiro plano) e um RDS Single-AZ: se qualquer um cair, a API fica indisponível |
 | **Dificuldade de evoluir para microsserviços** | Antes de dividir, é preciso separar camadas e responsabilidades |
 | **Stack única** | Todo o sistema fica preso a Python/Flask |
 | **Crescimento da complexidade** | Com mais funcionalidades, o `app.py` tende a virar um arquivo difícil de manter |
