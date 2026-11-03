@@ -21,7 +21,7 @@ The base application is a Flask + PostgreSQL monolith, originally provided at
 
 | Phase | Theme | Status | Folder |
 | ----- | ----- | ------ | ------ |
-| 1 | Monolith on AWS (VPC, EC2, RDS) | In progress | [phase-1-monolith-aws](./phase-1-monolith-aws) |
+| 1 | Monolith on AWS (VPC, EC2, RDS) | In progress | [phase-1](./phase-1) |
 | 2 | TBD | Not started | - |
 | 3 | TBD | Not started | - |
 | 4 | TBD | Not started | - |
